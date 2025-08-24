@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:tree_measure_app/src/features/authentication/auth_screen.dart';
+import 'package:tree_measure_app/src/features/camera/camera_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

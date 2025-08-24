@@ -4,9 +4,9 @@ plugins {
 
 // Define common Java/Kotlin versions
 ext {
-    set("compileSdkVersion", 35)
-    set("minSdkVersion", 23)
-    set("targetSdkVersion", 35)
+    set("compileSdkVersion", 36)
+    set("minSdkVersion", 24)
+    set("targetSdkVersion", 36)
     set("javaCompatibilityVersion", JavaVersion.VERSION_17)
     set("kotlinJvmTarget", "17")
 }

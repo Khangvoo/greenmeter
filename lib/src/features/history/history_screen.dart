@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:typed_data';
+
+import 'photo_detail_screen.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -10,7 +13,8 @@ class HistoryScreen extends StatefulWidget {
   State<HistoryScreen> createState() => _HistoryScreenState();
 }
 
-class _HistoryScreenState extends State<HistoryScreen> with WidgetsBindingObserver {
+class _HistoryScreenState extends State<HistoryScreen>
+    with WidgetsBindingObserver {
   List<AssetEntity> _images = [];
   bool _isLoading = false;
   PermissionStatus _photoPermissionStatus = PermissionStatus.denied;
@@ -91,6 +95,28 @@ class _HistoryScreenState extends State<HistoryScreen> with WidgetsBindingObserv
     });
   }
 
+  Future<void> _deleteImage(AssetEntity asset) async {
+    try {
+      final result = await PhotoManager.editor.deleteWithIds([asset.id]);
+      if (result.isNotEmpty) {
+        setState(() {
+          _images.remove(asset);
+        });
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Đã xóa ảnh')));
+      } else {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Không thể xóa ảnh')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Lỗi khi xóa ảnh: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -106,32 +132,80 @@ class _HistoryScreenState extends State<HistoryScreen> with WidgetsBindingObserv
       ),
       body: _photoPermissionStatus.isGranted
           ? (_isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _images.isEmpty
-                  ? const Center(child: Text('Không có ảnh nào trong thư viện.'))
-                  : GridView.builder(
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3,
-                        crossAxisSpacing: 4.0,
-                        mainAxisSpacing: 4.0,
-                      ),
-                      itemCount: _images.length,
-                      itemBuilder: (context, index) {
-                        final asset = _images[index];
-                        return FutureBuilder<Uint8List?>(
-                          future: asset.thumbnailDataWithSize(const ThumbnailSize(200, 200)),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.done && snapshot.data != null) {
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit.cover,
-                              );
-                            }
-                            return const Center(child: CircularProgressIndicator());
+                ? const Center(child: CircularProgressIndicator())
+                : _images.isEmpty
+                ? const Center(child: Text('Không có ảnh nào trong thư viện.'))
+                : ListView.builder(
+                    itemCount: _images.length,
+                    itemBuilder: (context, index) {
+                      final asset = _images[index];
+                      return Dismissible(
+                        key: Key(asset.id),
+                        direction: DismissDirection.endToStart,
+                        onDismissed: (direction) {
+                          _deleteImage(asset);
+                        },
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20.0),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    PhotoDetailScreen(image: asset),
+                              ),
+                            );
                           },
-                        );
-                      },
-                    ))
+                          child: Card(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 8.0,
+                              vertical: 4.0,
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.all(8.0),
+                              leading: FutureBuilder<Uint8List?>(
+                                future: asset.thumbnailDataWithSize(
+                                  const ThumbnailSize(100, 100),
+                                ),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                          ConnectionState.done &&
+                                      snapshot.data != null) {
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(8.0),
+                                      child: Image.memory(
+                                        snapshot.data!,
+                                        width: 80,
+                                        height: 80,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox(
+                                    width: 80,
+                                    height: 80,
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              title: Text(
+                                DateFormat(
+                                  'dd/MM/yyyy HH:mm',
+                                ).format(asset.createDateTime),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ))
           : Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

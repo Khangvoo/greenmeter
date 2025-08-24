@@ -2,11 +2,14 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:tree_measure_app/src/features/camera/camera_screen.dart';
 import 'package:tree_measure_app/src/shared/widgets/measurement_painter.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:tree_measure_app/src/services/plantnet_service.dart';
 import 'dart:ui' as ui;
 
 class MeasurementScreen extends StatefulWidget {
@@ -27,6 +30,8 @@ enum _DraggedObject {
 }
 
 class _MeasurementScreenState extends State<MeasurementScreen> {
+  final GlobalKey _repaintBoundaryKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
@@ -49,8 +54,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
   bool _isCalibrating = false;
   _DraggedObject _draggedObject = _DraggedObject.none;
   Size? _imageSize;
+  Size? _layoutSize;
+  Size? _displaySize;
+  bool _isLoadingPlantNet = false; // New variable
 
   final ImagePicker _picker = ImagePicker();
+  final PlantNetService _plantNetService = PlantNetService(); // New instance
 
   Future<void> _pickImage(ImageSource source) async {
     final pickedFile = await _picker.pickImage(
@@ -59,18 +68,108 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     );
     if (pickedFile != null) {
       _reset();
-      final decodedImage = await decodeImageFromList(
-        await pickedFile.readAsBytes(),
-      );
       setState(() {
         _pickedImage = File(pickedFile.path);
-        _imageSize = Size(
-          decodedImage.width.toDouble(),
-          decodedImage.height.toDouble(),
-        );
       });
-      _showPersonHeightDialog();
+      await _processImageForPlantNet(_pickedImage!);
     }
+  }
+
+  Future<void> _takePhotoWithSpiritLevel() async {
+    final imagePath = await Navigator.of(
+      context,
+    ).push<String>(MaterialPageRoute(builder: (context) => CameraScreen()));
+    if (imagePath != null) {
+      _reset();
+      setState(() {
+        _pickedImage = File(imagePath);
+      });
+      await _processImageForPlantNet(_pickedImage!);
+    }
+  }
+
+  Future<void> _processImageForPlantNet(File imageFile) async {
+    setState(() {
+      _isLoadingPlantNet = true;
+    });
+    _showSnackBar('Identifying plant...');
+
+    final decodedImage = await decodeImageFromList(
+      await imageFile.readAsBytes(),
+    );
+    setState(() {
+      _imageSize = Size(
+        decodedImage.width.toDouble(),
+        decodedImage.height.toDouble(),
+      );
+    });
+
+    final results = await _plantNetService.identifyPlant(imageFile);
+
+    setState(() {
+      _isLoadingPlantNet = false;
+    });
+
+    if (results.containsKey('error')) {
+      _showSnackBar('PlantNet Error: ${results['error']}');
+      _showPersonHeightDialog(); // Proceed even if PlantNet fails
+      return;
+    }
+
+    final List<dynamic> predictions = results['results'] ?? [];
+    if (predictions.isNotEmpty) {
+      await _showPlantNetResultsDialog(predictions);
+    } else {
+      _showSnackBar('No plant identified. Proceeding to measurement.');
+      _showPersonHeightDialog(); // Proceed if no plant identified
+    }
+  }
+
+  Future<void> _showPlantNetResultsDialog(List<dynamic> predictions) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Plant Identification Results'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: predictions.take(3).map((prediction) {
+                final species = prediction['species'];
+                final commonNames =
+                    (species['commonNames'] as List?)?.join(', ') ?? 'N/A';
+                final scientificName =
+                    species['scientificNameWithoutAuthor'] ?? 'N/A';
+                final score = (prediction['score'] * 100).toStringAsFixed(2);
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4.0),
+                  child: Text(
+                    '${commonNames} (${scientificName}) - ${score}% confidence',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Confirm & Proceed'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _showPersonHeightDialog();
+              },
+            ),
+            TextButton(
+              child: const Text('Cancel & Reset'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _reset();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showPersonHeightDialog() async {
@@ -139,6 +238,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     // Initialize lines only once
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {
+        _layoutSize = layoutSize;
+        _displaySize = displaySize;
         _topTreeLine = Offset(0, topOffset + displaySize.height * 0.25);
         _bottomTreeLine = Offset(0, topOffset + displaySize.height * 0.75);
         _topPersonLine = Offset(0, topOffset + displaySize.height * 0.4);
@@ -212,10 +313,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
         _bottomTreeLine == null ||
         _topPersonLine == null ||
         _bottomPersonLine == null ||
-        _personHeight == null)
+        _personHeight == null ||
+        _layoutSize == null) // Add guard for layoutSize
       return;
 
-    final double personPixelHeight = (_bottomPersonLine!.dy - _topPersonLine!.dy).abs();
+    final double personPixelHeight =
+        (_bottomPersonLine!.dy - _topPersonLine!.dy).abs();
     if (personPixelHeight < 10) {
       // Avoid division by zero or tiny values
       _showSnackBar(
@@ -225,7 +328,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
     }
 
     final ratio = _personHeight! / personPixelHeight;
-    final double treePixelHeight = (_bottomTreeLine!.dy - _topTreeLine!.dy).abs();
+    final double treePixelHeight = (_bottomTreeLine!.dy - _topTreeLine!.dy)
+        .abs();
     final calculatedTreeHeight = treePixelHeight * ratio;
 
     final double dbhHeightInPixels = 1.3 / ratio;
@@ -242,9 +346,10 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
       _pixelToMeterRatio = ratio;
       _calculatedTreeHeight = calculatedTreeHeight;
       _isCalibrating = false;
-      final screenWidth = MediaQuery.of(context).size.width;
-      _dbhLineP1 = Offset(screenWidth * 0.4, dbhLineY);
-      _dbhLineP2 = Offset(screenWidth * 0.6, dbhLineY);
+      // Use layoutSize.width instead of screenWidth
+      final containerWidth = _layoutSize!.width;
+      _dbhLineP1 = Offset(containerWidth * 0.4, dbhLineY);
+      _dbhLineP2 = Offset(containerWidth * 0.6, dbhLineY);
       _updateDiameter();
     });
   }
@@ -260,53 +365,12 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
   }
 
   Future<void> _saveMeasurement() async {
-    if (_pickedImage == null || _imageSize == null) return;
-
     try {
-      final recorder = ui.PictureRecorder();
-      final canvas = Canvas(
-        recorder,
-        Rect.fromLTWH(0, 0, _imageSize!.width, _imageSize!.height),
-      );
-
-      // Draw the original image
-      final imageData = await _pickedImage!.readAsBytes();
-      final ui.Image image = await decodeImageFromList(imageData);
-      canvas.drawImage(image, Offset.zero, Paint());
-
-      // Create a painter and paint the measurement lines
-      final painter = MeasurementPainter(
-        topTreeLine: _topTreeLine,
-        bottomTreeLine: _bottomTreeLine,
-        topPersonLine: _topPersonLine,
-        bottomPersonLine: _bottomPersonLine,
-        dbhLineP1: _dbhLineP1,
-        dbhLineP2: _dbhLineP2,
-      );
-      painter.paint(canvas, _imageSize!); // Use the original image size
-
-      // Draw the measurement results
-      _drawText(
-        canvas,
-        'Height: ${_calculatedTreeHeight?.toStringAsFixed(2)} m',
-        Offset(20, 20),
-        Colors.white,
-        24.0,
-      );
-      _drawText(
-        canvas,
-        'Diameter: ${_calculatedTreeDiameter} cm',
-        Offset(20, 60),
-        Colors.white,
-        24.0,
-      );
-
-      final picture = recorder.endRecording();
-      final ui.Image uiImage = await picture.toImage(
-        _imageSize!.width.toInt(),
-        _imageSize!.height.toInt(),
-      );
-      final ByteData? byteData = await uiImage.toByteData(
+      final RenderRepaintBoundary boundary =
+          _repaintBoundaryKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      final ui.Image image = await boundary.toImage(pixelRatio: 3.0);
+      final ByteData? byteData = await image.toByteData(
         format: ui.ImageByteFormat.png,
       );
       if (byteData == null) return;
@@ -324,6 +388,7 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
 
       if (result == true) {
         _showSnackBar('Image saved to Gallery!');
+        _reset();
       } else {
         _showSnackBar('Failed to save image.');
       }
@@ -396,6 +461,8 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
       _isCalibrating = false;
       _draggedObject = _DraggedObject.none;
       _imageSize = null;
+      _layoutSize = null;
+      _displaySize = null;
     });
   }
 
@@ -431,29 +498,43 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
             ),
         ],
       ),
-      body: _MeasurementBody(
-        pickedImage: _pickedImage,
-        isCalibrating: _isCalibrating,
-        personHeight: _personHeight,
-        calculatedTreeHeight: _calculatedTreeHeight,
-        calculatedDiameter: _calculatedTreeDiameter,
-        topTreeLine: _topTreeLine,
-        bottomTreeLine: _bottomTreeLine,
-        topPersonLine: _topPersonLine,
-        bottomPersonLine: _bottomPersonLine,
-        dbhLineP1: _dbhLineP1,
-        dbhLineP2: _dbhLineP2,
-        onPickImage: _pickImage,
-        onLayoutReady: _initCalibrationLines,
-        onPanStart: _onPanStart,
-        onPanUpdate: _onPanUpdate,
-        onPanEnd: _onPanEnd,
-      ),
+      body: _isLoadingPlantNet
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Identifying plant with PlantNet...'),
+                ],
+              ),
+            )
+          : _MeasurementBody(
+              repaintBoundaryKey: _repaintBoundaryKey,
+              pickedImage: _pickedImage,
+              isCalibrating: _isCalibrating,
+              personHeight: _personHeight,
+              calculatedTreeHeight: _calculatedTreeHeight,
+              calculatedDiameter: _calculatedTreeDiameter,
+              topTreeLine: _topTreeLine,
+              bottomTreeLine: _bottomTreeLine,
+              topPersonLine: _topPersonLine,
+              bottomPersonLine: _bottomPersonLine,
+              dbhLineP1: _dbhLineP1,
+              dbhLineP2: _dbhLineP2,
+              onPickImage: _pickImage,
+              onLayoutReady: _initCalibrationLines,
+              onPanStart: _onPanStart,
+              onPanUpdate: _onPanUpdate,
+              onPanEnd: _onPanEnd,
+              onTakePhotoPressed: _takePhotoWithSpiritLevel,
+            ),
     );
   }
 }
 
 class _MeasurementBody extends StatelessWidget {
+  final GlobalKey repaintBoundaryKey;
   final File? pickedImage;
   final bool isCalibrating;
   final double? personHeight;
@@ -470,9 +551,11 @@ class _MeasurementBody extends StatelessWidget {
   final void Function(DragStartDetails) onPanStart;
   final void Function(DragUpdateDetails) onPanUpdate;
   final void Function(DragEndDetails) onPanEnd;
+  final VoidCallback onTakePhotoPressed;
 
   const _MeasurementBody({
     super.key,
+    required this.repaintBoundaryKey,
     this.pickedImage,
     required this.isCalibrating,
     this.personHeight,
@@ -489,6 +572,7 @@ class _MeasurementBody extends StatelessWidget {
     required this.onPanStart,
     required this.onPanUpdate,
     required this.onPanEnd,
+    required this.onTakePhotoPressed,
   });
 
   @override
@@ -515,26 +599,29 @@ class _MeasurementBody extends StatelessWidget {
                     WidgetsBinding.instance.addPostFrameCallback(
                       (_) => onLayoutReady(constraints.biggest),
                     );
-                    return GestureDetector(
-                      onPanStart: onPanStart,
-                      onPanUpdate: onPanUpdate,
-                      onPanEnd: onPanEnd,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Image.file(pickedImage!, fit: BoxFit.contain),
-                          CustomPaint(
-                            size: constraints.biggest,
-                            painter: MeasurementPainter(
-                              topTreeLine: topTreeLine,
-                              bottomTreeLine: bottomTreeLine,
-                              topPersonLine: topPersonLine,
-                              bottomPersonLine: bottomPersonLine,
-                              dbhLineP1: dbhLineP1,
-                              dbhLineP2: dbhLineP2,
+                    return RepaintBoundary(
+                      key: repaintBoundaryKey,
+                      child: GestureDetector(
+                        onPanStart: onPanStart,
+                        onPanUpdate: onPanUpdate,
+                        onPanEnd: onPanEnd,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Image.file(pickedImage!, fit: BoxFit.contain),
+                            CustomPaint(
+                              size: constraints.biggest,
+                              painter: MeasurementPainter(
+                                topTreeLine: topTreeLine,
+                                bottomTreeLine: bottomTreeLine,
+                                topPersonLine: topPersonLine,
+                                bottomPersonLine: bottomPersonLine,
+                                dbhLineP1: dbhLineP1,
+                                dbhLineP2: dbhLineP2,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -583,7 +670,7 @@ class _MeasurementBody extends StatelessWidget {
             children: [
               Expanded(
                 child: ElevatedButton.icon(
-                  onPressed: () => onPickImage(ImageSource.camera),
+                  onPressed: onTakePhotoPressed,
                   icon: const Icon(Icons.camera_alt),
                   label: const Text('Camera'),
                 ),
