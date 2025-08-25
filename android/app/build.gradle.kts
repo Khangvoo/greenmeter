@@ -36,6 +36,12 @@ android {
         buildConfigField("String", "SERVER_CLIENT_ID", "\"925288608201-fvuocrstd1altg650dap7bvvp31o4ut1.apps.googleusercontent.com\"")
     }
 
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("src/main/assets")
+        }
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

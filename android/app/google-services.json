@@ -12,7 +12,20 @@
           "package_name": "com.example.tree_measure_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "925288608201-hkde5t139o6io9i8jhnqae4dqq8ciqf1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.tree_measure_app",
+            "certificate_hash": "ba3271c009cd9364698a7352227a0e1b3b1f5b5b"
+          }
+        },
+        {
+          "client_id": "925288608201-fvuocrstd1altg650dap7bvvp31o4ut1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCTPdbjzjWmhRxZfaYGsXUrtUHgALLEIc0"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "925288608201-fvuocrstd1altg650dap7bvvp31o4ut1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
