@@ -15,13 +15,17 @@ android {
         buildConfig = true
     }
 
+    aaptOptions {
+        noCompress += listOf("tflite")
+    }
+
     compileOptions {
-        sourceCompatibility = rootProject.ext.get("javaCompatibilityVersion") as JavaVersion
-        targetCompatibility = rootProject.ext.get("javaCompatibilityVersion") as JavaVersion
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = rootProject.ext.get("kotlinJvmTarget") as String
+        jvmTarget = "11"
     }
 
     defaultConfig {
@@ -33,13 +37,6 @@ android {
         targetSdk = rootProject.ext.get("targetSdkVersion") as Int
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        buildConfigField("String", "SERVER_CLIENT_ID", "\"925288608201-fvuocrstd1altg650dap7bvvp31o4ut1.apps.googleusercontent.com\"")
-    }
-
-    sourceSets {
-        getByName("main") {
-            assets.srcDirs("src/main/assets")
-        }
     }
 
     buildTypes {
@@ -47,6 +44,13 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+
+            isMinifyEnabled = true
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

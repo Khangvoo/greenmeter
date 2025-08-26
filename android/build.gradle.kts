@@ -7,8 +7,8 @@ ext {
     set("compileSdkVersion", 36)
     set("minSdkVersion", 24)
     set("targetSdkVersion", 36)
-    set("javaCompatibilityVersion", JavaVersion.VERSION_17)
-    set("kotlinJvmTarget", "17")
+    set("javaCompatibilityVersion", JavaVersion.VERSION_11)
+    set("kotlinJvmTarget", "11")
 }
 
 allprojects {
