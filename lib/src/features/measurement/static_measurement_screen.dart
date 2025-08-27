@@ -44,14 +44,26 @@ class _StaticMeasurementScreenState extends State<StaticMeasurementScreen> {
   }
 
   Future<void> _loadYoloModel() async {
-    final yolo = YOLO(
-      modelPath: 'assets/models/yolov8n.tflite',
-      task: YOLOTask.detect,
-    );
-    await yolo.loadModel(); // Use loadModel() instead of load()
     setState(() {
-      _yolo = yolo;
+      _isLoading = true;
     });
+    try {
+      final yolo = YOLO(
+        modelPath: 'flutter_assets/assets/models/yolov8n.tflite',
+        task: YOLOTask.detect,
+      );
+      await yolo.loadModel();
+      setState(() {
+        _yolo = yolo;
+      });
+    } catch (e) {
+      // ignore: avoid_print
+      print('Error loading YOLO model: $e');
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   @override

@@ -101,33 +101,21 @@ class _MeasurementScreenState extends State<MeasurementScreen> {
           ),
         ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          YOLOView(
-            modelPath: 'assets/models/yolov8n.tflite',
-            task: YOLOTask.detect,
-            onResult: (results) {
-              if (mounted) {
-                setState(() {
-                  _detectionResults = results;
-                  _calculateMeasurements();
-                });
-              }
-            },
-            onPerformanceMetrics: (metrics) {
-              // ignore: avoid_print
-              print('Performance: ${metrics.fps.toStringAsFixed(1)} FPS');
-            },
-          ),
-          CustomPaint(
-            painter: MeasurementPainter(
-              results: _detectionResults,
-              treeHeight: _treeHeight,
-              treeDiameter: _treeDiameter,
-            ),
-          ),
-        ],
+      body: YOLOView(
+        modelPath: 'flutter_assets/assets/models/yolov8n.tflite',
+        task: YOLOTask.detect,
+        onResult: (results) {
+          if (mounted) {
+            setState(() {
+              _detectionResults = results;
+              _calculateMeasurements();
+            });
+          }
+        },
+        onPerformanceMetrics: (metrics) {
+          // ignore: avoid_print
+          print('Performance: ${metrics.fps.toStringAsFixed(1)} FPS');
+        },
       ),
     );
   }
